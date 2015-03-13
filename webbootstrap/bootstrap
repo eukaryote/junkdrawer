@@ -1,0 +1,149 @@
+#!/bin/bash
+
+# bootstrap the web dependencies needed, installing things by default
+# in version-specific directories in '/opt'.
+
+set -o errexit
+set -o nounset
+#set -o verbose
+
+BINDIR="$(cd $(dirname $0) && pwd -P)"
+
+WORK_DIR="${WORK_DIR:-/var/tmp}"
+
+NODE_VERSION="${NODE_VERSION:-0.10.29}"
+NODE_PKG_URL="http://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}.tar.gz"
+NODE_PKG_SHA1="0d5dc62090404f7c903f29779295758935529242"
+NODE_PKG_NAME="$(basename ${NODE_PKG_URL})"
+NODE_PKG="${WORK_DIR}/${NODE_PKG_NAME}"
+NODE_INSTALL_DIR="${NODE_INSTALL_DIR:-/opt/node/${NODE_VERSION}}"
+
+PHANTOMJS_VERSION="${PHANTOMJS_VERSION:-1.9.7}"
+PHANTOMJS_PKG_URL="https://bitbucket.org/ariya/phantomjs/downloads/phantomjs-${PHANTOMJS_VERSION}-linux-x86_64.tar.bz2"
+PHANTOMJS_PKG_SHA1="ca3581dfdfc22ceab2050cf55ea7200c535a7368"
+PHANTOMJS_PKG_NAME="$(basename ${PHANTOMJS_PKG_URL})"
+PHANTOMJS_PKG="${WORK_DIR}/${PHANTOMJS_PKG_NAME}"
+PHANTOMJS_INSTALL_DIR="${PHANTOMJS_INSTALL_DIR:-/opt/phantomjs/${PHANTOMJS_VERSION}}"
+
+
+num_procs="$(grep --count -E '^processor\s' /proc/cpuinfo 2> /dev/null || echo 2)"
+
+npm_packages=(
+    generator-polymer
+    generator-gulp-webapp
+    generator-bootstrap
+    generator-mocha
+    generator-jasmine
+    generator-element
+    gulp-mocha-phantomjs
+    vulcanize
+    requirejs
+)
+
+# load utilities
+. $BINDIR/util.sh
+
+
+# TODO: think about how to genericize this method, given that the basic
+# logic is the same, but there are variations such as pre-checks (python2 here)
+install_nodejs() {
+    local pkg_url="$1"         # URL to download node src from if needed
+    local pkg="$2"             # Where to find/store downloaded src
+    local install_dir="$3"     # Where to install node
+    local work_dir="$4"        # Where to unpack and compile (not cleaned up)
+    local sha1="$5"            # Expected sha1 digest of package
+    local make_procs="${6:-2}" # Optional number of make parallel processes
+
+
+    local pkg_name="$(basename ${pkg_url})"
+    local initial_dir="$(pwd)"
+
+    # do nothing if there's already a node installed at the expected location
+    if [ -f "${install_dir}/bin/node" ]; then
+        cecho "${install_dir}/bin/node exists: skipping installation" $green
+        return 0
+    fi
+
+    # v8 can't be built if 'python' doesn't find a python2, so verify that
+    # and fail early if needed rather than 10 minutes into the node compile:
+    # https://codereview.chromium.org/11418101/
+    if [ "$(get_python_major_version)" != "2" ]; then
+        cecho "v8 build for node requires 'python' to be a python2: adjust PATH" $green
+        return 1
+    fi
+
+    cd "${work_dir}"
+
+    cecho "fetching nodejs from ${pkg_url}" $green
+    fetch_pkg "${pkg_url}" "${pkg}" "${sha1}"
+
+    # create install dir now, to fail before compile if inadequate perms
+    mkdir -p "${install_dir}"
+
+    tar xf "${pkg}"
+    cd "$(basename ${pkg_name} .tar.gz)"  # unpacked dir name based on pkg name
+
+
+    cecho "configuring nodejs for install_dir ${install_dir}" $green
+    ./configure --prefix "${install_dir}"
+    cecho "compiling nodejs..." $green &&  make -j ${make_procs}
+    cecho "installing nodejs to ${install_dir}" $green && make install
+
+    cd "${initial_dir}"
+}
+
+install_phantomjs() {
+    # same semantics for params as install_nodejs
+    local pkg_url="$1"
+    local pkg="$2"
+    local install_dir="$3"
+    local work_dir="$4"
+    local sha1="$5"
+
+    local pkg_name="$(basename ${pkg_url})"
+
+    # do nothing if there's already a phantomjs installed at expected location
+    if [ -f "${install_dir}/bin/phantomjs" ]; then
+        cecho "${install_dir}/bin/phantomjs exists: skipping installation" $green
+        return 0
+    fi
+
+    cecho "fetching phantomjs..." $green
+    fetch_pkg "${pkg_url}" "${pkg}" "${sha1}"
+
+    cecho "installing phantomjs to ${install_dir}" $green
+    mkdir -p "${install_dir}"
+    tar -xf "${pkg}" -C "${install_dir}" --strip-components 1
+}
+
+## Prepare build
+BUILD_DIR="$(mktemp -d --tmpdir=${WORK_DIR})"
+trap "rm -rf ${BUILD_DIR}" EXIT
+
+install_nodejs \
+    "${NODE_PKG_URL}" \
+    "${NODE_PKG}" \
+    "${NODE_INSTALL_DIR}" \
+    "${BUILD_DIR}" \
+    "${NODE_PKG_SHA1}" \
+    $((${num_procs} + 1))
+
+# install phantomjs
+install_phantomjs \
+    "${PHANTOMJS_PKG_URL}" \
+    "${PHANTOMJS_PKG}" \
+    "${PHANTOMJS_INSTALL_DIR}" \
+    "${BUILD_DIR}" \
+    "${PHANTOMJS_PKG_SHA1}"
+
+# install yo
+cecho "installing yo..." $green
+$BINDIR/run npm install -g yo
+
+# install npm deps
+for pkg in ${npm_packages[@]}; do
+    $BINDIR/run npm install -g $pkg
+done
+
+
+# install bower deps

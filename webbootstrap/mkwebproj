@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# Assuming that bootstrap has already been run to install global
+# dependencies like node, this can be used to generate a new
+# web project. It just creates the directory, copies this
+# 'bin' directory so that the utility scripts can be
+# reused, and then uses the gulp generator to generate an app.
+
+BINDIR="$(cd $(dirname ${BASH_SOURCE[0]:-$0}) && pwd -P)"
+
+if [ "$#" -lt 1 ]; then
+    echo "usage: $0 PROJPATH"
+    exit 1
+fi
+
+projpath="$1"
+mkdir "$projpath"
+cd "$projpath"
+cp -pr "${BINDIR}" .
+. bin/util.sh
+. bin/env.sh
+
+yo gulp-webapp:app
+yo mocha:app
+
+cecho "To get started:" $green
+cecho "cd ${projpath} && source ./bin/util.sh" $green

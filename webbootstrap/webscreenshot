@@ -1,0 +1,33 @@
+#!/bin/sh
+
+# Load a webpage using phantomjs and save it to a file.
+# This provides a nice screen capture of the entire page.
+
+set -o nounset
+set -o errexit
+
+BINDIR="$(cd $(dirname $0) && pwd -P)"
+
+echo "BINDIR: ${BINDIR}"
+
+capture() {
+    # feed temporary JS doc to phantomjs via /dev/stdin ('-' doesn't work)
+    (
+    cat <<-EOF
+    var page = require('webpage').create(),
+        url = "$1",
+        outfile = "$2";
+    page.open(url, function() {
+        page.render(outfile);
+        phantom.exit();
+    });
+EOF
+    ) | ${BINDIR}/run phantomjs /dev/stdin;
+}
+
+if [ "$#" -lt 2 ] ; then
+   echo "usage: $0 URL OUTFILE"
+   exit 1
+fi
+
+capture "$1" "$2"

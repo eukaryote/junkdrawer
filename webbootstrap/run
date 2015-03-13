@@ -1,0 +1,12 @@
+#!/bin/sh
+
+# Exec the command params in a known environment that ensures
+# the expected versions of dependencies are found and any needed
+# variables are set.
+
+NODE_INSTALL_DIR="${NODE_INSTALL_DIR:-/opt/node/0.10.29}"
+PHANTOMJS_INSTALL_DIR="${PHANTOMJS_INSTALL_DIR:-/opt/phantomjs/1.9.7}"
+
+export PATH="${NODE_INSTALL_DIR}/bin:${PHANTOMJS_INSTALL_DIR}/bin:${PATH}"
+
+exec "$@"
