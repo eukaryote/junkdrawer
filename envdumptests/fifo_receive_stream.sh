@@ -7,8 +7,9 @@ test -p $pipe || mkfifo $pipe
 while true
 do
     if read line <$pipe ; then
-        [ "$line" = "" ] && break
-        echo $line
-        echo
+        if [ "$line" = "" ] ; then
+            break
+        fi
+        echo "$line"
     fi
 done
