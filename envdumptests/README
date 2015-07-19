@@ -1,0 +1,10 @@
+Experiments with timing and behavior of various ways to get the os
+environment from one process to another on the same host.
+
+The use case is that an script or executable is invoked repeatedly by a third-
+party program that passes information by setting environment variables, and the
+script needs to relay that environment information to one or more
+possibly long-lived processes on the same host that will process the
+information and react accordingly. The options that are explored here
+are using a named pipe, using a unix domain socket, using redis pub/sub, and
+using a redis list as a queue.
