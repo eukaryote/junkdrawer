@@ -8,9 +8,7 @@ int main(int argc, char **argv, char** envp)
   for (env = envp; *env != 0; env++)
   {
     char* curr_env = *env;
-    printf("%s\n", curr_env);    
+    printf("%s\n", curr_env);
   }
   return 0;
 }
-
-
