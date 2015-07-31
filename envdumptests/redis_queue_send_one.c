@@ -54,9 +54,13 @@ char * make_env_message(const int max_size)
     const int MAX_WRITE = max_size - 3;  // leaving room for {} and NULL
 
     char *buffer = malloc(max_size);
+    char *result = NULL;
     char *envval, *escaped;
     int i, remaining, write_size, written = 1;
 
+    if (!buffer) {
+        return NULL;
+    }
     buffer[0] = '{';
     for (i = 0; i < NUM_KEYS; i++) {
         envval = getenv(KEYS[i]);
@@ -85,8 +89,8 @@ char * make_env_message(const int max_size)
     }
     buffer[written] = '}';
     buffer[written + 1] = 0;
-    buffer = realloc(buffer, written + 1);
-    return buffer;
+    result = realloc(buffer, written + 2);
+    return result ? result : buffer;
 }
 
 
@@ -126,6 +130,7 @@ int main(int argc, char **argv)
         }
         return 1;
     }
+    freeReplyObject(reply);
 
     // generate JSON message
     char *message = make_env_message(607);
