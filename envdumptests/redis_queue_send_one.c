@@ -8,11 +8,25 @@
 
 
 static const char * const KEYS[] = {
+    "DISPLAY",
+    "EDITOR",
+    "HOME",
+    "LANG",
+    "LANGUAGE",
+    "OLDPWD",
+    "PATH",
+    "PWD",
+    "SHELL",
+    "SHLVL",
+    "TERM",
+    "TEST",
+    "TMPDIR",
     "USER",
-    "HOME"
+    "VISUAL"
 };
-static const int NUM_KEYS = 2;
+static const int NUM_KEYS = 14;
 
+static const int MAX_SIZE = 2048;
 
 /* Replace function of Albert Chan <albertmcchan@yahoo.com>,
  * from http://creativeandcritical.net/str-replace-c.
@@ -117,23 +131,25 @@ int main(int argc, char **argv)
 {
     const char *hostname = "127.0.0.1";
     const int port = 6379;
-    const char *db = "2";
+    const char *db = "0";
 
     redisReply *reply;
     redisContext *c = redis_connect(hostname, port);
 
-    // choose database
-    reply = redisCommand(c, "SELECT %s", db);
-    if (!reply || reply->type == REDIS_REPLY_ERROR) {
-        if (reply) {
-            printf("redis error: %s\n", reply->str);
+    // choose database if necessary
+    if (strcmp(db, "0") != 0) {
+        reply = redisCommand(c, "SELECT %s", db);
+        if (!reply || reply->type == REDIS_REPLY_ERROR) {
+            if (reply) {
+                printf("redis error: %s\n", reply->str);
+            }
+            return 1;
         }
-        return 1;
+        freeReplyObject(reply);
     }
-    freeReplyObject(reply);
 
     // generate JSON message
-    char *message = make_env_message(607);
+    char *message = make_env_message(MAX_SIZE);
     if (!message) {
         redisFree(c);
         return 1;
