@@ -48,7 +48,7 @@ fetch() {
     local tarball=$(basename ${url})
     local origdir=$(pwd)
 
-    cd ${TMPDIR}
+    cd ${TMPDIR:-/tmp}
     if [[ ! -f "$(basename ${url})" ]]; then
         curl -O "${url}"
     fi
@@ -58,7 +58,7 @@ fetch() {
 }
 
 workdir=$(mktemp -d)
-# trap "rm -rf ${workdir}" EXIT
+trap "rm -rf ${workdir}" EXIT
 
 cd ${workdir}
 
