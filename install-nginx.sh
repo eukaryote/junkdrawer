@@ -1,50 +1,34 @@
 #!/usr/bin/env bash
 
-# Download, compile, and install Nginx, defaulting to using Nginx 1.9.6
-# and the HTTP2 module with OpenSSL.
+# Download, compile, and install Nginx with HTTP2 enabled and LibreSSL for TLS.
 
-set -eux
-set -o pipefail
+set -eux -o pipefail
 
-# '0' to use OpenSSL instead of LibreSSL, or SPDY instead of HTTP2
-USE_LIBRESSL="${USE_LIBRESSL:-1}"
-USE_HTTP2="${USE_HTTP2:-1}"
+DEFAULT_NGINX_VERSION="1.9.12"
+DEFAULT_NGINX_DIGEST="1af2eb956910ed4b11aaf525a81bc37e135907e7127948f9179f5410337da042"
 
-if [[ "${USE_HTTP2}" = "0" ]]; then
-    DEFAULT_NGINX_VERSION="1.9.4"
-    DEFAULT_NGINX_DIGEST="479b0c03747ee6b2d4a21046f89b06d178a2881ea80cfef160451325788f2ba8"
-    SPDY_MODULE_CONF="--with-http_spdy_module"
-else
-    DEFAULT_NGINX_VERSION="1.9.6"
-    DEFAULT_NGINX_DIGEST="ed501fc6d0eff9d3bc1049cc1ba3a3ac8c602de046acb2a4c108392bbfa865ea"
-    SPDY_MODULE_CONF="--with-http_v2_module"
-fi
-
-LIBPCRE_VERSION="${LIBPCRE_VERSION:-8.37}"
+LIBPCRE_VERSION="${LIBPCRE_VERSION:-8.38}"
 LIBPCRE_URL="${LIBPCRE_URL:-ftp://ftp.csx.cam.ac.uk/pub/software/programming/pcre/pcre-${LIBPCRE_VERSION}.tar.gz}"
-LIBPCRE_DIGEST="${LIBPCRE_DIGEST:-19d490a714274a8c4c9d131f651489b8647cdb40a159e9fb7ce17ba99ef992ab}"
+LIBPCRE_DIGEST="${LIBPCRE_DIGEST:-9883e419c336c63b0cb5202b09537c140966d585e4d0da66147dc513da13e629}"
 
 NGINX_VERSION="${NGINX_VERSION:-${DEFAULT_NGINX_VERSION}}"
 NGINX_URL="${NGINX_URL:-http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz}"
 NGINX_DIGEST="${NGINX_DIGEST:-${DEFAULT_NGINX_DIGEST}}"
 
-LIBRESSL_VERSION="${LIBRESSL_VERSION:-2.2.4}"
+LIBRESSL_VERSION="${LIBRESSL_VERSION:-2.2.6}"
 LIBRESSL_URL="${LIBRESSL_URL:-http://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-${LIBRESSL_VERSION}.tar.gz}"
-LIBRESSL_DIGEST="${LIBRESSL_DIGEST:-6b409859be8654afc3862549494e097017e64c8d167f12584383586306ef9a7e}"
-
-OPENSSL_VERSION="${OPENSSL_VERSION:-1.0.2d}"
-OPENSSL_URL="${OPENSSL_URL:-https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz}"
-OPENSSL_DIGEST="671c36487785628a703374c652ad2cebea45fa920ae5681515df25d9f2c9a8c8"
+LIBRESSL_DIGEST="${LIBRESSL_DIGEST:-1ee19994cffd047d40f63ba149115dba18a681b0cc923beec301bf424b58d64f}"
 
 NGINX_INSTALL_DIR="${NGINX_INSTALL_DIR:-/opt/nginx/${NGINX_VERSION}}"
+NGINX_TMP_DIR="${NGINX_TMP_DIR:-/var/tmp/nginx}"
 
-if [[ "${USE_LIBRESSL}" = "0" ]]; then
-    SSL_URL="${OPENSSL_URL}"
-    SSL_DIGEST="${OPENSSL_DIGEST}"
-else
-    SSL_URL="${LIBRESSL_URL}"
-    SSL_DIGEST="${LIBRESSL_DIGEST}"
-fi
+NGINX_LOG_DIR="${NGINX_LOG_DIR:-/var/log/nginx}"
+NGINX_DEFAULT_ERROR_LOG="${NGINX_DEFAULT_ERROR_LOG:-${NGINX_LOG_DIR}/error.log}"
+NGINX_DEFAULT_HTTP_LOG="${NGINX_DEFAULT_HTTP_LOG:-${NGINX_LOG_DIR}/access.log}"
+
+NGINX_DEFAULT_USER="${NGINX_DEFAULT_USER:-www-data}"
+NGINX_DEFAULT_GROUP="${NGINX_DEFAULT_GROUP:-www-data}"
+NGINX_DEFAULT_PID_FILE="${NGINX_DEFAULT_PID_FILE:-/var/run/nginx/pid}"
 
 umask 002
 
@@ -74,26 +58,53 @@ fetch() {
 }
 
 workdir=$(mktemp -d)
-trap "rm -rf ${workdir}" EXIT
+# trap "rm -rf ${workdir}" EXIT
 
 cd ${workdir}
 
-fetch "${SSL_URL}" "${SSL_DIGEST}" "${workdir}"
+fetch "${LIBRESSL_URL}" "${LIBRESSL_DIGEST}" "${workdir}"
 fetch "${LIBPCRE_URL}" "${LIBPCRE_DIGEST}" "${workdir}"
 fetch "${NGINX_URL}" "${NGINX_DIGEST}" "${workdir}"
+
+# manual patch for nginx-1.9.11+ and libressl-2.2.6 until 2.2.7 is released,
+# which will contain the following workaround for nginx
+cat <<EOF >> ${workdir}/$(basename ${LIBRESSL_URL} .tar.gz)/Makefile.am
+
+.PHONY: install_sw
+install_sw: install
+EOF
 
 cd $(basename ${NGINX_URL} .tar.gz)
 
 ./configure \
     --prefix=${NGINX_INSTALL_DIR} \
-    --with-openssl=${workdir}/$(basename ${SSL_URL} .tar.gz) \
+    --error-log-path=${NGINX_DEFAULT_ERROR_LOG} \
+    --http-log-path=${NGINX_DEFAULT_HTTP_LOG} \
+    --with-openssl=${workdir}/$(basename ${LIBRESSL_URL} .tar.gz) \
     --with-pcre=${workdir}/$(basename ${LIBPCRE_URL} .tar.gz) \
     --with-http_ssl_module \
-    ${SPDY_MODULE_CONF} \
+    --with-http_v2_module \
     --with-file-aio \
+    --with-threads \
+    --user=${NGINX_DEFAULT_USER} \
+    --group=${NGINX_DEFAULT_GROUP} \
+    --pid-path=/var/run/nginx/pid \
+    --http-client-body-temp-path=${NGINX_TMP_DIR}/client-body \
+    --http-proxy-temp-path=${NGINX_TMP_DIR}/proxy-temp \
+    --http-fastcgi-temp-path=${NGINX_TMP_DIR}/fastcgi-temp \
+    --http-uwsgi-temp-path=${NGINX_TMP_DIR}/uwsgi-temp \
+    --http-scgi-temp-path=${NGINX_TMP_DIR}/scgi-temp \
     --without-mail_pop3_module \
     --without-mail_smtp_module \
-    --without-mail_imap_module
+    --without-mail_imap_module > .build 2>&1
 
-make
-sudo make install
+make >> .build 2>&1
+sudo make install >> .build 2>&1
+for dirpath in $(dirname ${NGINX_DEFAULT_PID_FILE}) ${NGINX_LOG_DIR}  \
+        ${NGINX_TMP_DIR}/{client-body,proxy-temp,fastcgi-temp,uwsgi-temp,scgi-temp} ; do
+    sudo mkdir -p -m 02755 ${dirpath}
+    sudo chown ${NGINX_DEFAULT_USER}:${NGINX_DEFAULT_GROUP} ${dirpath}
+done
+sudo touch ${NGINX_DEFAULT_PID_FILE}
+sudo chown ${NGINX_DEFAULT_USER}:${NGINX_DEFAULT_GROUP} ${NGINX_DEFAULT_PID_FILE}
+sudo mv .build ${NGINX_INSTALL_DIR}
