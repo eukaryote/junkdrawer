@@ -96,10 +96,11 @@ cd $(basename ${NGINX_URL} .tar.gz)
     --http-scgi-temp-path=${NGINX_TMP_DIR}/scgi-temp \
     --without-mail_pop3_module \
     --without-mail_smtp_module \
-    --without-mail_imap_module > .build 2>&1
+    --without-mail_imap_module 2>&1 | tee .build
 
-make >> .build 2>&1
-sudo make install >> .build 2>&1
+make 2>&1 | tee -a .build
+sudo make install  2>&1 | tee -a .build
+
 for dirpath in $(dirname ${NGINX_DEFAULT_PID_FILE}) ${NGINX_LOG_DIR}  \
         ${NGINX_TMP_DIR}/{client-body,proxy-temp,fastcgi-temp,uwsgi-temp,scgi-temp} ; do
     sudo mkdir -p -m 02755 ${dirpath}
@@ -107,4 +108,5 @@ for dirpath in $(dirname ${NGINX_DEFAULT_PID_FILE}) ${NGINX_LOG_DIR}  \
 done
 sudo touch ${NGINX_DEFAULT_PID_FILE}
 sudo chown ${NGINX_DEFAULT_USER}:${NGINX_DEFAULT_GROUP} ${NGINX_DEFAULT_PID_FILE}
+
 sudo mv .build ${NGINX_INSTALL_DIR}
